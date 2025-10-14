@@ -1,0 +1,178 @@
+Authentication 
+All endpoints except /api/auth/register, /api/auth/login, /api/auth/verify-otp require JWT in the 
+Authorization header: Authorization: Bearer <token> 
+ 
+Auth Endpoints 
+1. Register Supplier 
+POST /api/auth/register 
+Body:  
+{ 
+  "name": "Supplier Name", 
+  "email": "supplier@example.com", 
+  "password": "password123", 
+  "profile": { 
+    "companyName": "Company Ltd", 
+    "registrationNumber": "REG123", 
+    "taxId": "TAX456", 
+    "address": "123 Street, City", 
+    "coreCapabilities": "Manufacturing, Logistics" 
+  }, 
+  "businessDocs": [ 
+    "business_reg_doc.pdf", 
+    "tax_doc.pdf" 
+  ] 
+} 
+ 
+Response: 
+{ "message": "Registration successful" } 
+ 
+ 
+2. Login (Step 1: Password) 
+POST /api/auth/login 
+Body: 
+{ 
+  "email": "supplier@example.com", 
+  "password": "password123" 
+} 
+ 
+Response: 
+{ "message": "OTP sent to your email" } 
+
+
+3. Verify OTP (Step 2: MFA) 
+POST /api/auth/verify-otp 
+Body: 
+{ 
+  "email": "supplier@example.com", 
+  "otp": "123456" 
+} 
+ 
+Response: 
+{ 
+  "token": "<JWT_TOKEN>", 
+  "user": { 
+    "id": "USER_ID", 
+    "name": "Supplier Name", 
+    "role": "Supplier" 
+  } 
+} 
+ 
+4. Admin Creates EP Member 
+POST /api/auth/create-ep-member 
+Headers: Authorization: Bearer <admin_token> 
+Body: 
+{ 
+  "name": "EP Member", 
+  "email": "ep@example.com", 
+  "password": "password123", 
+  "role": "Admin", // or "Manager", "Viewer" 
+  "profile": {} 
+} 
+ 
+Response: 
+{ "message": "EP member account created successfully" } 
+ 
+ 
+User/Supplier Profile 
+5. Get Profile 
+GET /api/user/profile or /api/supplier/profile 
+Headers: Authorization: Bearer <token> 
+Response:
+{ 
+  "_id": "USER_ID", 
+  "name": "Supplier Name", 
+  "email": "supplier@example.com", 
+  "role": "Supplier", 
+  "profile": { 
+    "companyName": "Company Ltd", 
+    "registrationNumber": "REG123", 
+    "taxId": "TAX456", 
+    "address": "123 Street, City", 
+    "coreCapabilities": "Manufacturing, Logistics" 
+  }, 
+  "businessDocs": [ 
+    "uploads/business_reg_doc.pdf", 
+    "uploads/tax_doc.pdf" 
+  ], 
+  ... 
+} 
+ 
+ 
+6. Update Profile 
+PUT /api/user/profile or /api/supplier/profile 
+Headers: Authorization: Bearer <token> 
+Body: (fields to update) 
+{ 
+  "profile": { 
+    "companyName": "New Name" 
+  } 
+} 
+ 
+Response: Updated user object 
+ 
+7. Upload Business Document (Supplier) 
+POST /api/supplier/upload-doc 
+Headers: Authorization: Bearer <supplier_token> 
+Form Data: 
+document: (file) 
+Response: 
+{ "message": "Document uploaded", "file": "uploads/filename.pdf" }
+
+
+Auction Endpoints 
+8. Create Auction (EP Members) 
+POST /api/auction/create 
+Headers: Authorization: Bearer <ep_member_token> 
+Form Data: 
+title, description, category, reservePrice, currency, startTime, endTime, autoExtension, 
+extensionMinutes, costParams (as JSON string), invitedSuppliers (as JSON array of user IDs), 
+lots (as JSON array) 
+auctionDocs: (multiple files) 
+lotDocs0, lotDocs1, ...: (files for each lot) 
+Response: 
+{ "message": "Auction created successfully", "auction": { ... } } 
+9. List Auctions 
+GET /api/auction/ 
+Headers: Authorization: Bearer <token> 
+Response: Array of auctions (filtered by role) 
+10. Get Auction Details 
+GET /api/auction/:id 
+Headers: Authorization: Bearer <token> 
+Response: Auction object with lots, invited suppliers, etc. 
+Bid Endpoints 
+11. Submit Bid (Supplier) 
+POST /api/bid/ 
+Headers: Authorization: Bearer <supplier_token> 
+Body: 
+{ 
+} 
+"auctionId": "AUCTION_ID", 
+"lotId": "LOT_ID", // optional if single-lot 
+"amount": 1000, 
+"currency": "USD", 
+"fobCost": 100, 
+"tax": 50, 
+"duty": 20, 
+"performanceScore": 90 
+Response: 
+{ "message": "Bid submitted", "bid": { ... } } 
+
+
+12. Update Bid (Supplier) 
+PUT /api/bid/:bidId 
+Headers: Authorization: Bearer <supplier_token> 
+Body: (fields to update) 
+{ 
+"amount": 950, 
+"currency": "USD", 
+"fobCost": 90, 
+"tax": 45, 
+"duty": 18, 
+"performanceScore": 92 
+} 
+Response: 
+{ "message": "Bid updated", "bid": { ... } } 
+13. Get Bid History (Supplier) 
+GET /api/bid/history/:auctionId 
+Headers: Authorization: Bearer <supplier_token> 
+Response: Array of bids for that auction by the supplier
