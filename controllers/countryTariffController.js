@@ -4,7 +4,7 @@ import CountryTariff from "../models/countryTariff.js";
 // Create a new country tariff
 export const createCountryTariff = async (req, res) => {
   try {
-    const { country, tariff } = req.body;
+    const { country, tariff, landFreightCost, seaFreightCost } = req.body;
 
     // Validate tariff range
     if (tariff < 1 || tariff > 100) {
@@ -12,6 +12,8 @@ export const createCountryTariff = async (req, res) => {
     }
 
     const decimalTariff = mongoose.Types.Decimal128.fromString(tariff.toString());
+    const decimalLandFreight = landFreightCost ? mongoose.Types.Decimal128.fromString(landFreightCost.toString()) : undefined;
+    const decimalSeaFreight = seaFreightCost ? mongoose.Types.Decimal128.fromString(seaFreightCost.toString()) : undefined;
 
     // Check if country already exists
     let countryTariff = await CountryTariff.findOne({ country: country.trim() });
@@ -19,14 +21,20 @@ export const createCountryTariff = async (req, res) => {
     if (countryTariff) {
       // Update existing country tariff
       countryTariff.tariff = decimalTariff;
+      if (decimalLandFreight !== undefined) countryTariff.landFreightCost = decimalLandFreight;
+      if (decimalSeaFreight !== undefined) countryTariff.seaFreightCost = decimalSeaFreight;
       await countryTariff.save();
       return res.status(200).json({ message: "Country tariff updated", countryTariff });
     } else {
       // Create new country tariff
-      countryTariff = new CountryTariff({ 
-        country: country.trim(), 
-        tariff: decimalTariff 
-      });
+      const tariffData = {
+        country: country.trim(),
+        tariff: decimalTariff
+      };
+      if (decimalLandFreight !== undefined) tariffData.landFreightCost = decimalLandFreight;
+      if (decimalSeaFreight !== undefined) tariffData.seaFreightCost = decimalSeaFreight;
+
+      countryTariff = new CountryTariff(tariffData);
       await countryTariff.save();
       return res.status(201).json({ message: "Country tariff created", countryTariff });
     }
@@ -43,7 +51,7 @@ export const createCountryTariff = async (req, res) => {
 export const updateCountryTariff = async (req, res) => {
   try {
     const { country } = req.params;
-    const { tariff } = req.body;
+    const { tariff, landFreightCost, seaFreightCost } = req.body;
 
     // Validate tariff range
     if (tariff < 1 || tariff > 100) {
@@ -51,6 +59,8 @@ export const updateCountryTariff = async (req, res) => {
     }
 
     const decimalTariff = mongoose.Types.Decimal128.fromString(tariff.toString());
+    const decimalLandFreight = landFreightCost ? mongoose.Types.Decimal128.fromString(landFreightCost.toString()) : undefined;
+    const decimalSeaFreight = seaFreightCost ? mongoose.Types.Decimal128.fromString(seaFreightCost.toString()) : undefined;
 
     const countryTariff = await CountryTariff.findOne({ country: country.trim() });
 
@@ -59,6 +69,8 @@ export const updateCountryTariff = async (req, res) => {
     }
 
     countryTariff.tariff = decimalTariff;
+    if (decimalLandFreight !== undefined) countryTariff.landFreightCost = decimalLandFreight;
+    if (decimalSeaFreight !== undefined) countryTariff.seaFreightCost = decimalSeaFreight;
     await countryTariff.save();
 
     res.status(200).json({ message: "Country tariff updated", countryTariff });
@@ -77,6 +89,8 @@ export const getAllCountryTariffs = async (req, res) => {
       _id: tariff._id,
       country: tariff.country,
       tariff: parseFloat(tariff.tariff.toString()),
+      landFreightCost: tariff.landFreightCost ? parseFloat(tariff.landFreightCost.toString()) : null,
+      seaFreightCost: tariff.seaFreightCost ? parseFloat(tariff.seaFreightCost.toString()) : null,
       createdAt: tariff.createdAt,
       updatedAt: tariff.updatedAt
     }));
@@ -102,6 +116,8 @@ export const getCountryTariffByCountry = async (req, res) => {
       _id: countryTariff._id,
       country: countryTariff.country,
       tariff: parseFloat(countryTariff.tariff.toString()),
+      landFreightCost: countryTariff.landFreightCost ? parseFloat(countryTariff.landFreightCost.toString()) : null,
+      seaFreightCost: countryTariff.seaFreightCost ? parseFloat(countryTariff.seaFreightCost.toString()) : null,
       createdAt: countryTariff.createdAt,
       updatedAt: countryTariff.updatedAt,
     };
