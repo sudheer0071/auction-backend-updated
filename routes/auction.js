@@ -14,8 +14,8 @@ import {
   deleteAnnouncement,
 } from "../controllers/auctionController.js";
 import { authenticate, authorizeRoles } from "../middlewares/auth.js";
-import upload from "../utils/multerConfig.js"; 
-import { createCompleteEventNormalized, updateCompleteEventNormalized, getAuctionByIdNormalized } from "../controllers/auctionController_fixed.js";
+import upload from "../utils/multerConfig.js";
+import { createCompleteEventNormalized, updateCompleteEventNormalized, getAuctionByIdNormalized, approveParticipantBid, submitQuestionnaire } from "../controllers/auctionController_fixed.js";
 
 const router = express.Router();
 
@@ -106,6 +106,21 @@ router.delete(
   authenticate,
   authorizeRoles("Admin", "Manager"),
   deleteAnnouncement
+);
+
+// Approve participant bid for auction access
+router.post(
+  "/:id/approve-participant",
+  authenticate,
+  authorizeRoles("Admin", "Manager", "Viewer"),
+  approveParticipantBid
+);
+
+// Submit questionnaire/terms acceptance
+router.post(
+  "/:id/submit-questionnaire",
+  authenticate,
+  submitQuestionnaire
 );
 
 export default router;

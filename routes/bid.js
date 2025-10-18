@@ -11,7 +11,8 @@ router.post("/", authenticate, authorizeRoles("supplier"), submitBid);
 router.put("/:bidId", authenticate, authorizeRoles("supplier"), updateBid);
 
 // suppliers get their bid history for an auction
-router.get("/history/:auctionId", authenticate, authorizeRoles("supplier"), getBidHistory);
+// it could be supplier as well as admin
+router.get("/history/:auctionId", authenticate, authorizeRoles("supplier", "Admin"), getBidHistory);
 
 // Get auction ranking
 router.get("/ranking/:auctionId", authenticate, getAuctionRanking);

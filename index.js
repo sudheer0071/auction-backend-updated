@@ -113,19 +113,67 @@ mongoose
 
 // Run every minute to update auction statuses
 cron.schedule("* * * * *", async () => {
-  const now = new Date();
+  try {
+    const now = new Date();
+    console.log(`[CRON] Running auction status update at ${now.toISOString()}`);
 
-  // Activate scheduled auctions
-  await Auction.updateMany(
-    { status: "published", startTime: { $lte: now }, endTime: { $gt: now } },
-    { $set: { status: "Active" } }
-  );
+    // Activate scheduled/published auctions that have reached their start time
+    const activatedResult = await Auction.updateMany(
+      {
+        status: { $in: ["published", "Scheduled"] },
+        startTime: { $lte: now },
+        endTime: { $gt: now }
+      },
+      { $set: { status: "Active" } }
+    );
 
-  // End active auctions
-  await Auction.updateMany(
-    { status: "Active", endTime: { $lte: now } },
-    { $set: { status: "Ended" } }
-  );
+    if (activatedResult.modifiedCount > 0) {
+      console.log(`[CRON] Activated ${activatedResult.modifiedCount} auction(s)`);
+
+      // Emit socket notification for activated auctions
+      const activatedAuctions = await Auction.find({
+        status: "Active",
+        startTime: { $lte: now },
+        updatedAt: { $gte: new Date(now.getTime() - 60000) } // Updated in last minute
+      });
+
+      activatedAuctions.forEach(auction => {
+        io.to(auction._id.toString()).emit('auctionStarted', {
+          auctionId: auction._id,
+          message: 'Auction has started',
+          status: 'Active'
+        });
+      });
+    }
+
+    // End active auctions that have reached their end time
+    const endedResult = await Auction.updateMany(
+      { status: "Active", endTime: { $lte: now } },
+      { $set: { status: "Ended" } }
+    );
+
+    if (endedResult.modifiedCount > 0) {
+      console.log(`[CRON] Ended ${endedResult.modifiedCount} auction(s)`);
+
+      // Emit socket notification for ended auctions
+      const endedAuctions = await Auction.find({
+        status: "Ended",
+        endTime: { $lte: now },
+        updatedAt: { $gte: new Date(now.getTime() - 60000) } // Updated in last minute
+      });
+
+      endedAuctions.forEach(auction => {
+        io.to(auction._id.toString()).emit('auctionEnded', {
+          auctionId: auction._id,
+          message: 'Auction has ended',
+          status: 'Ended'
+        });
+      });
+    }
+
+  } catch (error) {
+    console.error('[CRON] Error updating auction statuses:', error);
+  }
 });
 
 import { broadcastUpdatedRankings } from "./controllers/bidController.js";

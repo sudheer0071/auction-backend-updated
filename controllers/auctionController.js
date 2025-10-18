@@ -218,7 +218,7 @@ export const createCompleteEvent = async (req, res) => {
               }
               
               // Send invitation email (you may need to create this function or modify existing one)
-              await sendAuctionConfirmationEmail(email, auction.title, null, "", invitation.token, auction._id, auctionDetailsHtml);
+              await sendAuctionConfirmationEmail(email, auction.title, null, "", invitation.token, auction._id, auctionDetailsHtml, auction.event_documents || [], auction.auction_settings);
             } catch (emailError) {
               console.error(`Failed to send invitation to ${email}:`, emailError);
               // Continue with other emails
@@ -398,7 +398,7 @@ let lotIds = [];
         await invitation.save();
       }
       // Build confirmation link (not used in email body anymore)
-      await sendAuctionConfirmationEmail(email, auction.title, null, previewEmail, invitation.token, auction._id, auctionDetailsHtml);
+      await sendAuctionConfirmationEmail(email, auction.title, null, previewEmail, invitation.token, auction._id, auctionDetailsHtml, auction.event_documents || [], auction.auction_settings);
     }
     res.status(201).json({ message: "Auction created successfully", auction });
   } catch (err) {
@@ -441,7 +441,7 @@ export const listAuctions = async (req, res) => {
     // console.log(auctions, "auctions")
     // Fetch auctions based on user rol
     if (["Admin", "Manager", "Viewer"].includes(req.user.role)) {
-      auctions = await Auction.find({createdBy: req.user.userId}).populate("lots invitedSuppliers createdBy");
+      auctions = await Auction.find({createdBy: req.user.userId}).populate("lots invitedSuppliers createdBy auction_settings");
       // Add noOfLots to each auction
       // const enrichedAuctions = auctions.map(auction => {
       //   const auctionObj = auction.toObject();
@@ -455,28 +455,39 @@ export const listAuctions = async (req, res) => {
 
     // Supplier-specific logic
     else if (req.user.role === "supplier") {
-      console.log("kkkkkkkkkkk");
-      // 
+      console.log("Fetching auctions for supplier");
+
       const supplierId = new mongoose.Types.ObjectId(req.user.userId);
       console.log("user id ", req.user.userId);
-      
+
       // find the email from this user.userId
       const user = await User.findById(req.user.userId);
-      const email = user ? user.email : null; 
+      const email = user ? user.email : null;
 
-      // from the table EventParticipants, find the the one which has this email as participant
-      
-        const eventParticipant = await EventParticipant.find({ "participant.email": email });
-      console.log("event participant ", eventParticipant);
+      if (!email) {
+        return res.status(400).json({ message: "User email not found" });
+      }
 
-      console.log("suppliers id ", eventParticipant._id);
+      // from the table EventParticipants, find participants with this email
+      // Only show auctions that the participant has explicitly accepted
+      const eventParticipants = await EventParticipant.find({
+        "participant.email": email,
+        auctionStatus: "accepted" // Only show accepted auctions
+      });
+
+      console.log("event participants (accepted only): ", eventParticipants);
+
+      // Get the event IDs from accepted participants only
+      const acceptedEventIds = eventParticipants.map(ep => ep.event_id);
 
       auctions = await Auction.find({
-        // : eventParticipant._id,
-        invitedSupplierEmail:email
-        // status: { $in: ["Active", "Scheduled"] }
-      }).populate("lots invitedSuppliers createdBy");
-      console.log(auctions, "kkkkkkkkkkk1111111111");
+        $and: [
+          { invitedSupplierEmail: email },
+          { _id: { $in: acceptedEventIds } } // Only include auctions that participant has accepted
+        ]
+      }).populate("lots invitedSuppliers createdBy auction_settings");
+
+      console.log("Filtered auctions (accepted only): ", auctions.length);
 
       const now = new Date();
       const upcoming = [];

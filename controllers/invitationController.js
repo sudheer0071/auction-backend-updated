@@ -3,6 +3,7 @@ import User from "../models/user.js";
 import crypto from "crypto";
 import { sendInvitationEmail, sendAuctionLinkEmail, sendThankYouEmail } from "../utils/mailer.js"; // You need to implement this utility
 import Auction from "../models/auction.js";
+import EventParticipant from "../models/eventParticipant.js";
 
 export const getAllInvitations = async (req, res) => {
   try {
@@ -120,20 +121,21 @@ export const inviteSupplier = async (req, res) => {
 export const respondToInvitation = async (req, res) => {
   try {
     const method = req.method;
-    let token, response, auctionId;
+    let token, response, auctionId, source;
     if (method === 'POST') {
       token = req.body.token;
       response = req.body.response;
       auctionId = req.body.auctionId;
- 
-      
+      source = req.body.source;
     } else {
       token = req.query.token;
       response = req.query.response;
       auctionId = req.query.auctionId;
+      source = req.query.source;
     }
     console.log("req.body ", req.body);
     console.log("token , auctionId ", token, auctionId);
+    console.log("source of request: ", source); // Log the source to identify email-based requests
 
     if (!token || !response) {
       return res.status(400).send("Missing required parameters.");
@@ -147,12 +149,70 @@ export const respondToInvitation = async (req, res) => {
     if (invitation.response === "yes" && !auctionId) {
       return res.status(400).send("You have already responded to this invitation.");
     }
+
+    // Check if auction has already started when source is auction-invitation
+    if (source === "auction-invitation" && auctionId) {
+      const auction = await Auction.findById(auctionId).populate('auction_settings');
+      if (!auction) {
+        return res.status(404).send("Auction not found.");
+      }
+
+      const currentTime = Date.now();
+      const startTime = auction.auction_settings?.start_date || auction.startTime;
+      const hasStarted = startTime && new Date(startTime).getTime() <= currentTime;
+
+      if (hasStarted) {
+        return res.send(`
+          <html>
+            <head>
+              <title>Auction Already Started</title>
+              <style>
+                body { font-family: Arial, sans-serif; background: #f7f7f7; color: #222; }
+                .container { max-width: 500px; margin: 80px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 40px 30px; text-align: center; }
+                h2 { color: #dc3545; }
+                p { font-size: 18px; margin-top: 20px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h2>Auction Already Started</h2>
+                <p>This auction has already started. No invites will be accepted now.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+    }
+
     console.log("responding to invitation");
     console.log("token  and response ", token, response);
 
-    invitation.response = response;
+    if(source !== "auction-invitation"){
+      invitation.response = response;
+    }
     await invitation.save();
-    
+
+    // Update EventParticipant auctionStatus if auctionId is provided
+    if (auctionId) {
+      try {
+        const participant = await EventParticipant.findOne({
+          event_id: auctionId,
+          "participant.email": invitation.email
+        });
+
+        if (participant) {
+          participant.auctionStatus = response === "yes" ? "accepted" : "rejected";
+          await participant.save();
+          console.log(`Updated auctionStatus to ${participant.auctionStatus} for participant ${invitation.email} in auction ${auctionId}`);
+        } else {
+          console.log(`Participant not found for email ${invitation.email} in auction ${auctionId}`);
+        }
+      } catch (participantError) {
+        console.error("Error updating participant auction status:", participantError);
+        // Don't fail the entire request, just log the error
+      }
+    }
+
     if (response === "yes") {
       // Check if this is a native invite (no auction ID)
       if (!auctionId) {
@@ -183,9 +243,10 @@ export const respondToInvitation = async (req, res) => {
         if (!auction) {
           return res.status(404).send("Auction not found.");
         }
+
         const auctionLink = `${process.env.FRONTEND_URL}/supplier/event/${auction.id}`;
-        console.log("sending email.............///////// ",  req.body);
-        
+        console.log(" sending auction link to , ", invitation.email)
+
         await sendAuctionLinkEmail(invitation.email, auction.title, auctionLink);
         return res.send(`
           <html>
@@ -208,7 +269,25 @@ export const respondToInvitation = async (req, res) => {
         `);
       }
     } else {
-      return res.send("Thank you for your response.");
+      return res.send(`
+        <html>
+          <head>
+            <title>Invitation Declined</title>
+            <style>
+              body { font-family: Arial, sans-serif; background: #f7f7f7; color: #222; }
+              .container { max-width: 500px; margin: 80px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 40px 30px; text-align: center; }
+              h2 { color: #dc3545; }
+              p { font-size: 18px; margin-top: 20px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h2>Invitation Declined</h2>
+              <p>Thank you for your response. We have recorded that you decline to participate in this auction.</p>
+            </div>
+          </body>
+        </html>
+      `);
     }
   } catch (err) {
     return res.status(500).send("Failed to process invitation response: " + err.message);

@@ -6,6 +6,7 @@ const auctionSettingsSchema = new mongoose.Schema({
   start_time: { type: String, required: true, default: "09:00" },
   end_date: { type: Date },
   end_time: { type: String, required:true },
+  bid_deadline: { type: Date, required: true },
   bid_direction: { type: String, enum: ["forward", "reverse"], required: true, default: "reverse" },
   event_type: { type: String, enum: ["ranked", "sealed"], required: true, default: "ranked" },
   minimum_duration: { type: Number, required: true, default: 10 }, // in minutes

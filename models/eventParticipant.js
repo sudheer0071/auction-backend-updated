@@ -9,7 +9,8 @@ const participantSchema = new mongoose.Schema({
 const eventParticipantSchema = new mongoose.Schema({
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: "Event", required: true },
   participant: participantSchema,
-  status: { type: String, enum: ["pending", "yes", "not_accepted"], default: "pending" },
+  status: { type: String, enum: ["pending", "yes","not_accepted"], default: "pending" },
+  auctionStatus: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
   approved: { type: Boolean, default: false },
   questionnaires_completed: { type: Boolean, default: false },
   lots_entered: { type: Boolean, default: false },

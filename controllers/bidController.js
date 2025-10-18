@@ -6,6 +6,7 @@ import { convertCurrencyToGBP, convertGBPToCurrency, validateBidAgainstPriceLimi
 import User from "../models/user.js";
 import eventLot from "../models/eventLot.js";
 import BidHistory from "../models/bidHistory.js";
+import EventParticipant from "../models/eventParticipant.js";
 
 // Helper function to broadcast updated rankings
 export const broadcastUpdatedRankings = async (io, auctionId, auctionSettings, socket = null) => {
@@ -164,6 +165,23 @@ export const submitBid = async (req, res) => {
     } catch (historyError) {
       console.error("Failed to record bid history:", historyError);
       // Don't fail the bid submission if history recording fails
+    }
+
+    // Update participant's lots_entered status
+    try {
+      await EventParticipant.findOneAndUpdate(
+        {
+          event_id: auctionId,
+          "participant.email": userEmail
+        },
+        {
+          $set: { lots_entered: true }
+        }
+      );
+      console.log(`Updated lots_entered to true for participant: ${userEmail}`);
+    } catch (participantError) {
+      console.error("Failed to update participant lots_entered status:", participantError);
+      // Don't fail bid submission if this update fails
     }
 
     // Emit real-time update to auction room
@@ -376,13 +394,29 @@ export const updateBid = async (req, res) => {
 };
 
 // Get bid history for a supplier in an auction
+// This returns the current ACTIVE bids (from Bid model) for display in qualification bids form
+// For complete history, use getCompleteBidHistory
 export const getBidHistory = async (req, res) => {
   try {
     const { auctionId } = req.params;
-    const bids = await Bid.find({
-      auction: auctionId,
-      supplier: req.user.userId,
-    }).sort({ createdAt: -1 });
+
+    // Check user role - admins can see all bids, suppliers only see their own
+    let query = { auction: auctionId, status: "Active" };
+
+    if (req.user.role === "supplier") {
+      // Suppliers can only see their own active bids
+      query.supplier = req.user.userId;
+    }
+    // Admin, Manager, Viewer roles can see all active bids (no supplier filter added)
+
+    // Use Bid model to get active bids (current state), not BidHistory
+    // Don't populate lot - frontend expects lot as ObjectId string, not object
+    // Populate supplier with email for admin to identify suppliers in ParticipantsTab
+    const bids = await Bid.find(query)
+      .populate('supplier', 'name email') // Populate supplier details for admin
+      .sort({ createdAt: -1 })
+      .lean(); // Use lean() for better performance and plain JavaScript objects
+
     res.json(bids);
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch bid history", error: err.message });

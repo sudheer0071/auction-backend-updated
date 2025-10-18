@@ -207,7 +207,7 @@ export const createCompleteEventNormalized = async (req, res) => {
               }
 
               // Send invitation email with documents
-              await sendAuctionConfirmationEmail(email, savedAuction.title, null, "", invitation.token, savedAuction._id, auctionDetailsHtml, eventDocuments);
+              await sendAuctionConfirmationEmail(email, savedAuction.title, null, "", invitation.token, savedAuction._id, auctionDetailsHtml, eventDocuments, auction_settings);
             } catch (emailError) {
               console.error(`Failed to send invitation to ${email}:`, emailError);
               // Continue with other emails
@@ -522,8 +522,157 @@ export const updateCompleteEventNormalized = async (req, res) => {
   }
 };
 
+// Approve participant bid for auction access
+export const approveParticipantBid = async (req, res) => {
+  console.log("Approving participant bid for auction access");
+
+  try {
+    const { id: auctionId } = req.params;
+    const { supplierEmail } = req.body;
+
+    if (!supplierEmail) {
+      return res.status(400).json({ message: "Supplier email is required" });
+    }
+
+    // 1. Find the auction
+    const auction = await Auction.findById(auctionId);
+    if (!auction) {
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    // 2. Find the participant in EventParticipant collection
+    const participant = await EventParticipant.findOne({
+      event_id: auctionId,
+      "participant.email": supplierEmail
+    });
+
+    if (!participant) {
+      return res.status(404).json({
+        message: "Participant not found in this auction"
+      });
+    }
+
+    // 3. Check if participant has submitted bids (lots_entered should be true)
+    // if (!participant.lots_entered) {
+    //   return res.status(400).json({
+    //     message: "Participant has not submitted any bids yet"
+    //   });
+    // }
+
+    // 4. Check if already approved
+    if (participant.approved) {
+      return res.status(400).json({
+        message: "Participant is already approved"
+      });
+    }
+
+    // 5. Update the participant's approved status
+    participant.approved = true;
+    await participant.save();
+
+    // 6. Send approval email notification
+    const { sendBidApprovalEmail } = await import("../utils/mailer.js");
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const auctionLink = `${frontendUrl}/supplier/event/${auctionId}`;
+
+    try {
+      await sendBidApprovalEmail(
+        supplierEmail,
+        auction.title || "Auction",
+        auctionLink,
+        participant.participant.name || "Supplier"
+      );
+      console.log(`Approval email sent to ${supplierEmail}`);
+    } catch (emailError) {
+      console.error("Failed to send approval email:", emailError);
+      // Don't fail the request if email fails, just log it
+    }
+
+    // 7. Return updated participant
+    res.status(200).json({
+      message: "Participant approved successfully",
+      participant: {
+        email: participant.participant.email,
+        name: participant.participant.name,
+        company: participant.participant.company,
+        approved: participant.approved,
+        lots_entered: participant.lots_entered,
+        questionnaires_completed: participant.questionnaires_completed
+      }
+    });
+
+  } catch (error) {
+    console.error("Error approving participant:", error);
+    res.status(500).json({
+      message: "Error approving participant",
+      error: error.message
+    });
+  }
+};
+
+// Submit questionnaire/terms acceptance
+export const submitQuestionnaire = async (req, res) => {
+  console.log("Submitting questionnaire/terms acceptance");
+
+  try {
+    const { id: auctionId } = req.params;
+    const { supplierEmail } = req.body;
+
+    if (!supplierEmail) {
+      return res.status(400).json({ message: "Supplier email is required" });
+    }
+
+    // 1. Find the auction
+    const auction = await Auction.findById(auctionId);
+    if (!auction) {
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    // 2. Find the participant in EventParticipant collection
+    const participant = await EventParticipant.findOne({
+      event_id: auctionId,
+      "participant.email": supplierEmail
+    });
+
+    if (!participant) {
+      return res.status(404).json({
+        message: "Participant not found in this auction"
+      });
+    }
+
+    // 3. Update the participant's questionnaires_completed status
+    participant.questionnaires_completed = true;
+    await participant.save();
+
+    console.log(`Updated questionnaires_completed to true for participant: ${supplierEmail}`);
+
+    // 4. Return updated participant
+    res.status(200).json({
+      message: "Questionnaire submitted successfully",
+      participant: {
+        email: participant.participant.email,
+        name: participant.participant.name,
+        company: participant.participant.company,
+        approved: participant.approved,
+        lots_entered: participant.lots_entered,
+        questionnaires_completed: participant.questionnaires_completed
+      }
+    });
+
+  } catch (error) {
+    console.error("Error submitting questionnaire:", error);
+    res.status(500).json({
+      message: "Error submitting questionnaire",
+      error: error.message
+    });
+  }
+};
+
 export default {
   createCompleteEventNormalized,
   updateCompleteEventNormalized,
-  getAuctionByIdNormalized
+  getAuctionByIdNormalized,
+  approveParticipantBid,
+  submitQuestionnaire
 };
