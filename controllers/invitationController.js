@@ -157,9 +157,27 @@ export const respondToInvitation = async (req, res) => {
         return res.status(404).send("Auction not found.");
       }
 
-      const currentTime = Date.now();
-      const startTime = auction.auction_settings?.start_date || auction.startTime;
-      const hasStarted = startTime && new Date(startTime).getTime() <= currentTime;
+      // Combine start_date and start_time to get accurate start datetime
+      let hasStarted = false;
+      if (auction.auction_settings?.start_date && auction.auction_settings?.start_time) {
+        const startDate = auction.auction_settings.start_date;
+        const startTime = auction.auction_settings.start_time;
+
+        // Extract date part (YYYY-MM-DD format)
+        const datePart = typeof startDate === 'string' && startDate.includes('T')
+          ? startDate.split('T')[0]
+          : new Date(startDate).toISOString().split('T')[0];
+
+        // Combine date and time to create full datetime (assuming GMT/UTC)
+        const auctionStartDateTime = new Date(`${datePart}T${startTime}:00Z`);
+        const currentTime = new Date();
+
+        hasStarted = currentTime >= auctionStartDateTime;
+      } else {
+        // Fallback to old logic if start_time is not available
+        const startTime = auction.auction_settings?.start_date || auction.startTime;
+        hasStarted = startTime && new Date(startTime).getTime() <= Date.now();
+      }
 
       if (hasStarted) {
         return res.send(`
@@ -201,9 +219,33 @@ export const respondToInvitation = async (req, res) => {
         });
 
         if (participant) {
-          participant.auctionStatus = response === "yes" ? "accepted" : "rejected";
-          await participant.save();
-          console.log(`Updated auctionStatus to ${participant.auctionStatus} for participant ${invitation.email} in auction ${auctionId}`);
+          // Check if auction status is already accepted
+          if (participant.auctionStatus === "accepted") {
+            console.log(`Participant ${invitation.email} has already accepted the auction ${auctionId}. Skipping update.`);
+             return res.send(`
+          <html>
+            <head>
+              <title>Already Responded</title>
+              <style>
+                body { font-family: Arial, sans-serif; background: #f7f7f7; color: #222; }
+                .container { max-width: 500px; margin: 80px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 40px 30px; text-align: center; }
+                h2 { color: #1AAB74; }
+                p { font-size: 18px; margin-top: 20px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h2>Already Responded</h2>
+                <p>You already responded to this Invitation.</p>
+              </div>
+            </body>
+          </html>
+        `);
+          } else {
+            participant.auctionStatus = response === "yes" ? "accepted" : "rejected";
+            await participant.save();
+            console.log(`Updated auctionStatus to ${participant.auctionStatus} for participant ${invitation.email} in auction ${auctionId}`);
+          }
         } else {
           console.log(`Participant not found for email ${invitation.email} in auction ${auctionId}`);
         }

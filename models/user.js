@@ -15,6 +15,7 @@ const userSchema = new mongoose.Schema({
     registrationNumber: { type: String, required:false },
     // taxId: { type: String, required: function() { return this.role === "supplier"; } },
     country: { type: String, required: false },
+    currency: { type: String, required: false },
     // coreCapabilities: { type: String, required: function() { return this.role === "supplier"; } },
     portOfLoading: { type: String, required: false },
     // containerCapacity: { type: Number, required: function() { return this.role === "Supplier"; } },

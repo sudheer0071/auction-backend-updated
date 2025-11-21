@@ -10,6 +10,7 @@ const questionnaireSchema = new mongoose.Schema({
   scoring: { type: Boolean, default: false },
   weighting: { type: Number, default: 0 },
   order_index: { type: Number, required: true, default: 0 },
+  answer: { type: mongoose.Schema.Types.Mixed },
 }, { timestamps: true });
 
 export default mongoose.model("Questionnaire", questionnaireSchema);

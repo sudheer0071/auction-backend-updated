@@ -12,6 +12,7 @@ const bidSchema = new mongoose.Schema({
   tax: { type: Number, required: true },
   duty: { type: Number, required: true },
   totalCost: { type: Number, required: true },
+  landed_cost: { type: Number, default: 0 },
   performanceScore: { type: Number, default: 0 },
   status: { type: String, enum: ["Active", "Withdrawn"], default: "Active" },
   bidRange: {

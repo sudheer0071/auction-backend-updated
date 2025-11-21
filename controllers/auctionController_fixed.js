@@ -145,8 +145,8 @@ export const createCompleteEventNormalized = async (req, res) => {
 
     await savedAuction.save();
 
-    // 8. Handle participants - send invitations
-    if (participants && participants.length > 0) {
+    // 8. Handle participants - send invitations (only if status is not draft)
+    if (participants && participants.length > 0 && status !== "draft") {
       try {
         const emails = participants.map(p => p.participant?.email).filter(email => email);
         const normalizedEmails = [...new Set(emails)]; // Remove duplicates
@@ -250,9 +250,9 @@ export const createCompleteEventNormalized = async (req, res) => {
 export const getAuctionByIdNormalized = async (req, res) => {
   try {
     // console.log(" reqqqqqqqq" , req);
-    
+
     const auctionId = req.params.id;
-    
+
     const auction = await Auction.findById(auctionId)
       .populate('auction_settings')
       .populate('questionnaires')
@@ -266,12 +266,15 @@ export const getAuctionByIdNormalized = async (req, res) => {
       return res.status(404).json({ message: "Auction not found" });
     }
 
+    // Participants already contain questionnaire_answers from the EventParticipant model
+    // No additional processing needed
+
     res.json(auction);
   } catch (error) {
     console.error("Error fetching auction:", error);
-    res.status(500).json({ 
-      message: "Error fetching auction", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error fetching auction",
+      error: error.message
     });
   }
 };
@@ -380,49 +383,122 @@ export const updateCompleteEventNormalized = async (req, res) => {
 
     // 6. Update EventLots
     if (include_rfq && lots?.length > 0) {
-      // Remove old lots
-      if (auction.event_lots?.length > 0) {
-        await EventLot.deleteMany({ _id: { $in: auction.event_lots } });
+      // Get old lots BEFORE updating them
+      const oldLots = auction.event_lots?.length > 0
+        ? await EventLot.find({ _id: { $in: auction.event_lots } })
+        : [];
+
+      const oldLotsMap = new Map();
+      oldLots.forEach(lot => {
+        // Use lot name as identifier since lots don't have stable external IDs
+        oldLotsMap.set(lot.name, lot);
+      });
+
+      const lotIds = [];
+      const currentLotNames = lots.map(l => l.name);
+
+      // Find lots to remove (those not in the new list)
+      const lotsToRemove = oldLots.filter(oldLot => !currentLotNames.includes(oldLot.name));
+      if (lotsToRemove.length > 0) {
+        const idsToRemove = lotsToRemove.map(l => l._id);
+        await EventLot.deleteMany({ _id: { $in: idsToRemove } });
+        console.log(`Removed ${idsToRemove.length} lots:`, lotsToRemove.map(l => l.name));
       }
 
-      // Create new lots
-      const lotIds = [];
+      // Update existing lots or create new ones
       for (const lot of lots) {
-        const lotDoc = new EventLot({
-          event_id: auction._id,
-          ...lot
-        });
-        const savedLot = await lotDoc.save();
-        lotIds.push(savedLot._id);
+        const existingLot = oldLotsMap.get(lot.name);
+
+        if (existingLot) {
+          // Update existing lot - preserve the ID
+          existingLot.quantity = lot.quantity || existingLot.quantity;
+          existingLot.unit_of_measure = lot.unit_of_measure || existingLot.unit_of_measure;
+          existingLot.current_price = lot.current_price !== undefined ? lot.current_price : existingLot.current_price;
+          existingLot.qualification_price = lot.qualification_price !== undefined ? lot.qualification_price : existingLot.qualification_price;
+          existingLot.current_value = lot.current_value !== undefined ? lot.current_value : existingLot.current_value;
+          existingLot.qualification_value = lot.qualification_value !== undefined ? lot.qualification_value : existingLot.qualification_value;
+
+          await existingLot.save();
+          lotIds.push(existingLot._id);
+          console.log(`Updated existing lot: ${lot.name} (ID: ${existingLot._id})`);
+        } else {
+          // Create new lot
+          const lotDoc = new EventLot({
+            event_id: auction._id,
+            ...lot
+          });
+          const savedLot = await lotDoc.save();
+          lotIds.push(savedLot._id);
+          console.log(`Created new lot: ${lot.name} (ID: ${savedLot._id})`);
+        }
       }
+
       auction.event_lots = lotIds;
     }
 
     // 7. Update EventParticipants
     console.log("participants  ", participants);
 
-    // Get old participants BEFORE deleting them to compare
+    // Get old participants BEFORE updating them to compare
     const oldAuction = await Auction.findById(auction._id).populate('participants');
-    const oldEmails = oldAuction?.participants?.map(p => p.participant?.email).filter(email => email) || [];
+    const oldParticipantsMap = new Map();
+    const oldEmails = [];
+
+    if (oldAuction?.participants) {
+      oldAuction.participants.forEach(p => {
+        const email = p.participant?.email;
+        if (email) {
+          oldParticipantsMap.set(email, p);
+          oldEmails.push(email);
+        }
+      });
+    }
+
     console.log("old Auction//////// ", oldAuction);
     console.log("old participants//////// ", oldAuction?.participants);
     console.log("old emails//////// ", oldEmails);
 
     if (participants?.length > 0) {
-      // Remove old participants
-      if (auction.participants?.length > 0) {
-        await EventParticipant.deleteMany({ _id: { $in: auction.participants } });
+      const participantIds = [];
+      const currentEmails = participants.map(p => p.participant?.email).filter(email => email);
+
+      // Find participants to remove (those not in the new list)
+      const emailsToRemove = oldEmails.filter(email => !currentEmails.includes(email));
+      if (emailsToRemove.length > 0) {
+        const idsToRemove = emailsToRemove.map(email => oldParticipantsMap.get(email)?._id).filter(id => id);
+        if (idsToRemove.length > 0) {
+          await EventParticipant.deleteMany({ _id: { $in: idsToRemove } });
+          console.log(`Removed ${idsToRemove.length} participants:`, emailsToRemove);
+        }
       }
 
-      // Create new participants
-      const participantIds = [];
+      // Update existing participants or create new ones
       for (const participant of participants) {
-        const participantDoc = new EventParticipant({
-          event_id: auction._id,
-          ...participant
-        });
-        const savedParticipant = await participantDoc.save();
-        participantIds.push(savedParticipant._id);
+        const email = participant.participant?.email;
+        if (!email) continue;
+
+        const existingParticipant = oldParticipantsMap.get(email);
+
+        if (existingParticipant) {
+          // Update existing participant - preserve their data
+          existingParticipant.participant.name = participant.participant?.name || existingParticipant.participant.name;
+          existingParticipant.participant.company = participant.participant?.company || existingParticipant.participant.company;
+          existingParticipant.status = participant.status || existingParticipant.status;
+          // Keep existing: auctionStatus, approved, questionnaires_completed, lots_entered, questionnaire_answers
+
+          await existingParticipant.save();
+          participantIds.push(existingParticipant._id);
+          console.log(`Updated existing participant: ${email}`);
+        } else {
+          // Create new participant
+          const participantDoc = new EventParticipant({
+            event_id: auction._id,
+            ...participant
+          });
+          const savedParticipant = await participantDoc.save();
+          participantIds.push(savedParticipant._id);
+          console.log(`Created new participant: ${email}`);
+        }
       }
 
       auction.participants = participantIds;
@@ -433,8 +509,8 @@ export const updateCompleteEventNormalized = async (req, res) => {
    
     await auction.save();
 
-    // 8. Handle participant invitations - only send to new participants
-    if (participants && participants.length > 0) {
+    // 8. Handle participant invitations - only send to new participants (only if status is not draft)
+    if (participants && participants.length > 0 && status !== "draft") {
       try {
         const newEmails = participants.map(p => p.participant?.email).filter(email => email);
         const normalizedNewEmails = [...new Set(newEmails)];
@@ -617,10 +693,14 @@ export const submitQuestionnaire = async (req, res) => {
 
   try {
     const { id: auctionId } = req.params;
-    const { supplierEmail } = req.body;
+    const { supplierEmail, answers, cartons } = req.body;
 
     if (!supplierEmail) {
       return res.status(400).json({ message: "Supplier email is required" });
+    }
+
+    if (!answers) {
+      return res.status(400).json({ message: "Answers are required" });
     }
 
     // 1. Find the auction
@@ -641,13 +721,53 @@ export const submitQuestionnaire = async (req, res) => {
       });
     }
 
-    // 3. Update the participant's questionnaires_completed status
+    // 3. Save answers to participant's questionnaire_answers array
+    // answers object structure: { [questionId]: value }
+    const questionnaireAnswers = [];
+
+    for (const [questionId, answer] of Object.entries(answers)) {
+      try {
+        // Find questionnaire by ID or order_index
+        const questionnaire = await Questionnaire.findOne({
+          $or: [
+            { _id: mongoose.Types.ObjectId.isValid(questionId) ? questionId : null },
+            { order_index: parseInt(questionId) }
+          ],
+          event_id: auctionId
+        });
+
+        if (questionnaire) {
+          questionnaireAnswers.push({
+            questionnaire_id: questionnaire._id,
+            question_text: questionnaire.question_text,
+            question_type: questionnaire.question_type,
+            order_index: questionnaire.order_index,
+            answer: answer
+          });
+          console.log(`Prepared answer for questionnaire ${questionId}:`, answer);
+        } else {
+          console.warn(`Questionnaire not found for ID/index: ${questionId}`);
+        }
+      } catch (saveError) {
+        console.error(`Error processing answer for questionnaire ${questionId}:`, saveError);
+        // Continue with other answers even if one fails
+      }
+    }
+
+    // 4. Update the participant with answers, cartons, and questionnaires_completed status
+    participant.questionnaire_answers = questionnaireAnswers;
     participant.questionnaires_completed = true;
+
+    // Save cartons if provided
+    if (cartons !== undefined && cartons !== null) {
+      participant.cartons = parseInt(cartons) || 0;
+    }
+
     await participant.save();
 
-    console.log(`Updated questionnaires_completed to true for participant: ${supplierEmail}`);
+    console.log(`Updated questionnaires_completed to true, saved ${questionnaireAnswers.length} answers, and cartons: ${participant.cartons} for participant: ${supplierEmail}`);
 
-    // 4. Return updated participant
+    // 5. Return updated participant
     res.status(200).json({
       message: "Questionnaire submitted successfully",
       participant: {
@@ -656,7 +776,8 @@ export const submitQuestionnaire = async (req, res) => {
         company: participant.participant.company,
         approved: participant.approved,
         lots_entered: participant.lots_entered,
-        questionnaires_completed: participant.questionnaires_completed
+        questionnaires_completed: participant.questionnaires_completed,
+        questionnaire_answers: participant.questionnaire_answers
       }
     });
 

@@ -4,6 +4,7 @@ import User from "../models/user.js";
 export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select("-password");
+    // console.log("user profile..../\/\/\/\/\/\/\/ ", user);
     res.json(user);
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch profile", error: err.message });
@@ -50,14 +51,14 @@ export const updateProfile = async (req, res) => {
     // Prevent role or email change
     delete updates.role;
     delete updates.email;
-
+   console.log("update profile.... /\/\/\/\/\/", updates);
     // Only allow updating allowed fields
     const user = await User.findByIdAndUpdate(
       req.user.userId,
       { $set: updates },
       { new: true, runValidators: true }
     ).select("-password");
-
+  console.log("updated user profile.... /\/\/\/\/\/", user);
     res.json(user);
   } catch (err) {
     res.status(500).json({ message: "Failed to update profile", error: err.message });

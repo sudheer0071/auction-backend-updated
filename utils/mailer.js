@@ -146,41 +146,29 @@ export const sendInvitationEmail = async (to, registrationLink, auctionTitle = "
 };
 
 export const sendAuctionConfirmationEmail = async (to, auctionTitle, confirmationLink, previewEmail, token, auctionId, auctionDetailsHtml, documents = [], auctionSettings = {}) => {
-  // Format dates if available
+  // Format dates from auction settings (as stored in DB)
+  // console.log("auction-setingggggggggggg ", auctionSettings);
+  
+  const formatDateTime = (date, time) => {
+    if (!date) return null;
+    const dateStr = new Date(date).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+    return time ? `${dateStr} at ${time} UTC` : dateStr;
+  };
+
   const startDateTime = auctionSettings?.start_date
-    ? new Date(auctionSettings.start_date).toLocaleString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'UTC',
-        timeZoneName: 'short'
-      })
+    ? formatDateTime(auctionSettings.start_date, auctionSettings.start_time)
     : '[Start Date and Time]';
 
-  const endDateTime = auctionSettings?.start_date && auctionSettings?.minimum_duration
-    ? new Date(new Date(auctionSettings.start_date).getTime() + auctionSettings.minimum_duration * 60000).toLocaleString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'UTC',
-        timeZoneName: 'short'
-      })
+  const endDateTime = auctionSettings?.end_date
+    ? formatDateTime(auctionSettings.end_date, auctionSettings.end_time)
     : '[End Date and Time]';
 
   const bidDeadline = auctionSettings?.bid_deadline
-    ? new Date(auctionSettings.bid_deadline).toLocaleString('en-GB', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'UTC',
-        timeZoneName: 'short'
-      })
+    ? formatDateTime(auctionSettings.bid_deadline) + ' UTC'
     : '[Insert Deadline Date and Time]';
 
   const mailOptions = {

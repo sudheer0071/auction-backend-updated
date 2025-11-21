@@ -35,6 +35,10 @@ const bidHistorySchema = new mongoose.Schema({
     type: Number, 
     required: true 
   },
+  unit_by_supplier: { 
+    type: Number, 
+    required: false 
+  },
   tax: { 
     type: Number, 
     required: true 
@@ -48,6 +52,7 @@ const bidHistorySchema = new mongoose.Schema({
     required: true 
   },
   
+  landed_cost: { type: Number, default: 0 },
   // Supplier name for easy access
   supplierName: { 
     type: String, 
