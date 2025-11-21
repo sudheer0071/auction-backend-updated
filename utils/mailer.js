@@ -168,7 +168,7 @@ export const sendAuctionConfirmationEmail = async (to, auctionTitle, confirmatio
     : '[End Date and Time]';
 
   const bidDeadline = auctionSettings?.bid_deadline
-    ? formatDateTime(auctionSettings.bid_deadline) + ' UTC'
+    ? formatDateTime(auctionSettings.bid_deadline, auctionSettings.bid_deadline_time) + ' UTC'
     : '[Insert Deadline Date and Time]';
 
   const mailOptions = {
